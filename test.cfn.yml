@@ -1,0 +1,79 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+
+Description: Test
+
+Resources:
+
+  TestQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      VisibilityTimeout: 30
+      KmsMasterKeyId: alias/aws/sqs
+
+  TestEventLambdaPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      FunctionName: !Ref TestLambda
+      SourceArn: !GetAtt TestEventRule.Arn
+
+  TestEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      State: ENABLED
+      ScheduleExpression: 'cron(* * * * ? *)'
+      Targets:
+        - Arn: !GetAtt TestLambda.Arn
+          Id: !Ref TestLambda
+
+  TestLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          QueueUrl: !Ref TestQueue
+          CloudWatchMetricNamespace: mytest
+          CloudWatchMetricName: TestQueueApproximateNumberOfMessages
+      Code:
+        S3Bucket: public-aws-serverless-repo
+        S3Key: lambda-update-sqs-queue-depth.zip
+      Handler: main
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: go1.x
+      Timeout: 300
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+      Policies:
+        - PolicyName: sqs-attr
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:GetQueueAttributes
+                Resource:
+                  - !GetAtt TestQueue.Arn
+        - PolicyName: cloudwatch-put
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricData
+                Resource: '*'
+
